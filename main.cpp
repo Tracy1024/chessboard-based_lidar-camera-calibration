@@ -351,6 +351,38 @@ std::vector<cv::Point3f> generate_corners_cloud(pcl::PointCloud<pcl::PointXYZ>::
 }
 
 
+std::vector<cv::Point3f> generate_corners_cloud(std::vector<cv::Point3f> corners3D, int corner_proRow, int corner_proCol){
+
+    std::vector<cv::Point3f> corners3D_gen;
+
+    float dis_verti_x = (corners3D[0].x - corners3D[2].x)/(corner_proCol+1);
+    float dis_verti_y = (corners3D[0].y - corners3D[2].y)/(corner_proCol+1);
+    float dis_verti_z = (corners3D[0].z - corners3D[2].z)/(corner_proCol+1);
+
+    float dis_hori_x = (corners3D[0].x - corners3D[1].x)/(corner_proRow+1);
+    float dis_hori_y = (corners3D[0].y - corners3D[1].y)/(corner_proRow+1);
+    float dis_hori_z = (corners3D[0].z - corners3D[1].z)/(corner_proRow+1);
+
+    for(int i=1;i<corner_proCol+1;i++){
+
+        float x_start =  corners3D[0].x - i*dis_verti_x;
+        float y_start =  corners3D[0].y - i*dis_verti_y;
+        float z_start =  corners3D[0].z - i*dis_verti_z;
+
+        for(int j=1;j<corner_proRow+1;j++){
+            float x_current = x_start - j*dis_hori_x;
+            float y_current = y_start - j*dis_hori_y;
+            float z_current = z_start - j*dis_hori_z;
+            corners3D.push_back(cv::Point3f(x_current, y_current, z_current));
+
+        }
+    }
+
+    return corners3D_gen;
+
+}
+
+
 void visualisation_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud1, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud2, pcl::PointCloud<pcl::PointXYZ>::Ptr cloud3){
 
     //show three point clouds with B,G,R
@@ -368,7 +400,7 @@ void visualisation_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud1, pcl::PointC
 }
 
 
-std::vector<cv::Point3f> corners3D_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud){
+pcl::PointCloud<pcl::PointXYZ>::Ptr corners3D_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud){
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_passthrough_filtered (new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::Normal>::Ptr normal (new pcl::PointCloud<pcl::Normal>);
@@ -377,19 +409,26 @@ std::vector<cv::Point3f> corners3D_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr clo
     pcl::PointCloud<pcl::PointXYZ>::Ptr plane_boundary (new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ>::Ptr corner_candidates (new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ>::Ptr corner_cloud (new pcl::PointCloud<pcl::PointXYZ>);
-    std::vector<cv::Point3f> corners_3D;
+//    std::vector<cv::Point3f> corners_3D;
 
     cloud_passthrough_filtered = pass_through_filter(cloud, -1, 5, -20, 0, -2, 2);
     normal = calculate_normal(cloud_passthrough_filtered, 1.5);
     plane = seg_plane_RANSAC(cloud_passthrough_filtered, normal, 500, 0.05);
-    plane_filtered = statOutlierRemoval_filter(plane, 30, 0.1);
+    plane_filtered = statOutlierRemoval_filter(plane, 80, 0.3);
     //plane_boundary = find_boundary(plane_filtered, 1.5);
     corner_candidates = find_corner_candidates_cloud(plane_filtered, 0.5);
     corner_cloud = find_corner_cloud(corner_candidates);
-    corners_3D = generate_corners_cloud(corner_cloud, 6, 8);
+
+
+//    for(std::size_t i=0;i<corner_cloud->points.size();i++){
+//
+//        pcl::PointXYZ point = corner_cloud->points[i];
+//        corners_3D.push_back(cv::Point3f(point.x, point.y, point.z));
+//
+//    }
     visualisation_cloud(plane, plane_filtered, corner_cloud);
 
-    return corners_3D;
+    return corner_cloud;
 
 }
 
@@ -489,6 +528,21 @@ void projection_box(pcl::PointCloud<pcl::PointXYZ>::Ptr corners3D, cv::Mat img, 
     cv::waitKey(0);
 }
 
+void projection_box(std::vector<cv::Point3f> corners3D, cv::Mat img, cv::Mat R, cv::Mat t, cv::Mat para_cameraIn, cv::Mat dist_Coeff){
+
+    // project 3d-points into image view
+    std::vector<cv::Point2f> pts_2d;
+    cv::projectPoints(corners3D, R, t, para_cameraIn, dist_Coeff, pts_2d);
+
+
+    //creat projected box
+    cv::Rect box(pts_2d[0].x, pts_2d[0].y, abs(pts_2d[1].x-pts_2d[0].x), abs(pts_2d[2].y-pts_2d[0].y));
+    cv::rectangle(img, box, cv::Scalar(0, 0, 255), 2, cv::LINE_8, 0);
+
+    cv::imshow("projeted box", img);
+    cv::waitKey(0);
+}
+
 void project(pcl::PointCloud<pcl::PointXYZ>::Ptr corners3D, cv::Mat img, cv::Mat R, cv::Mat t, cv::Mat para_cameraIn, cv::Mat dist_Coeff){
 
     int deep_max = 0;
@@ -554,8 +608,11 @@ int main() {
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_input (new pcl::PointCloud<pcl::PointXYZ>);
     cloud_input = load_cloud(path_pointcloud);
 
-    std::vector<cv::Point3f> corners_3D;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr corners_3D;
     corners_3D = corners3D_cloud(cloud_input);
+
+    std::vector<cv::Point3f> corners_3D_gen;
+    corners_3D_gen = generate_corners_cloud(corners_3D, 6, 8);
 
 
 
@@ -584,7 +641,7 @@ int main() {
 
 
     //calculate ex-parameter
-    cv::solvePnPRansac(corners_3D, corners_2D, parameter_cameraIn, distCoeffs, rvecs, tvecs, false, 100, 1.0, 0.99, inliers);
+    cv::solvePnPRansac(corners_3D_gen, corners_2D, parameter_cameraIn, distCoeffs, rvecs, tvecs, false, 100, 1.0, 0.99, inliers);
     cv::Rodrigues(rvecs, rMat);
 
 
@@ -592,6 +649,8 @@ int main() {
     std::cerr << "====================Result====================" << std::endl;
     std::cout << "R_mat: " << rMat << std::endl;
     std::cout << "t: " << tvecs << std::endl;
+
+    projection_box(corners_3D, image, rvecs, tvecs, parameter_cameraIn, distCoeffs);
 
     return 0;
 
