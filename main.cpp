@@ -238,6 +238,14 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr find_corner_candidates_cloud(pcl::PointCloud
     return cloud_out;
 }
 
+float dist_manhattan(pcl::PointXYZ p1, pcl::PointXYZ p2){
+
+    float dist;
+    dist = abs(p1.x-p2.x) + abs(p1.y-p2.y) + abs(p1.z-p2.z);
+    return dist;
+}
+
+
 pcl::PointCloud<pcl::PointXYZ>::Ptr find_corner_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud){
 
     //calculate distance of each point to centroid
@@ -252,7 +260,8 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr find_corner_cloud(pcl::PointCloud<pcl::Point
     for(size_t i = 0;i<cloud->points.size();i++){
 
         pcl::PointXYZ point_ = cloud->points[i];
-        float dis_ = pcl::geometry::squaredDistance(point_, centroid_);
+        //float dis_ = pcl::geometry::squaredDistance(point_, centroid_);
+        float dis_ = dist_manhattan(point_, centroid_);
         dis_to_centroid[i] = dis_;
 
     }
@@ -304,6 +313,7 @@ pcl::PointCloud<pcl::PointXYZ>::Ptr find_corner_cloud(pcl::PointCloud<pcl::Point
     corners->push_back(corner_candidate2);
     corners->push_back(corner_candidate3);
     corners->push_back(corner_candidate4);
+    //corners->push_back(centroid_);
 
     return corners;
 
@@ -369,7 +379,7 @@ std::vector<cv::Point3f> corners3D_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr clo
     pcl::PointCloud<pcl::PointXYZ>::Ptr corner_cloud (new pcl::PointCloud<pcl::PointXYZ>);
     std::vector<cv::Point3f> corners_3D;
 
-    cloud_passthrough_filtered = pass_through_filter(cloud, -4, 8, -13, 2, -2, 2);
+    cloud_passthrough_filtered = pass_through_filter(cloud, -1, 5, -20, 0, -2, 2);
     normal = calculate_normal(cloud_passthrough_filtered, 1.5);
     plane = seg_plane_RANSAC(cloud_passthrough_filtered, normal, 500, 0.05);
     plane_filtered = statOutlierRemoval_filter(plane, 30, 0.1);
@@ -377,7 +387,7 @@ std::vector<cv::Point3f> corners3D_cloud(pcl::PointCloud<pcl::PointXYZ>::Ptr clo
     corner_candidates = find_corner_candidates_cloud(plane_filtered, 0.5);
     corner_cloud = find_corner_cloud(corner_candidates);
     corners_3D = generate_corners_cloud(corner_cloud, 6, 8);
-    visualisation_cloud(cloud_passthrough_filtered, plane, corner_cloud);
+    visualisation_cloud(plane, plane_filtered, corner_cloud);
 
     return corners_3D;
 
@@ -406,23 +416,23 @@ std::vector<cv::Point2f> find_corner_img( cv::Mat img, int corner_proRow, int co
 
     for (int i = 0; i < 3; i++) {
 
-        bool patternfound = cv::findChessboardCorners(img, board_size, corners,
+        bool patternfound = cv::findChessboardCorners(Extractcorner, board_size, corners,
                                                       cv::CALIB_CB_FAST_CHECK + cv::CALIB_CB_ADAPTIVE_THRESH +
                                                       cv::CALIB_CB_NORMALIZE_IMAGE);
 
         if (!patternfound & i!=2) {
             cv::Rect area(ceil(width / (4 - i)), ceil(height / (4 - i)), ceil(width / (4 - i) * (2 - i)),
                           ceil(height / (4 - i) * (2 - i)));
-            img = img(area);
-            cv::imshow("test", img);
+            Extractcorner = Extractcorner(area);
+//            cv::imshow("test", Extractcorner);
             cv::waitKey(0);
 
         }
         else if(patternfound){
 
             cv::Mat imageGray;
-            cv::cvtColor(img, imageGray, CV_RGB2GRAY);
-            cv::cornerSubPix(imageGray, corners, cv::Size(11, 11), cv::Size(-1, -1),
+            cv::cvtColor(Extractcorner, imageGray, CV_RGB2GRAY);
+            cv::cornerSubPix(imageGray, corners, cv::Size(6, 8), cv::Size(-1, -1),
                              cv::TermCriteria(CV_TERMCRIT_EPS + CV_TERMCRIT_ITER, 30, 0.1));
 
             iter_adaptiv = max(0, i-1);
@@ -436,7 +446,9 @@ std::vector<cv::Point2f> find_corner_img( cv::Mat img, int corner_proRow, int co
 
     for (std::size_t i = 0; i < corners.size(); i++) {
 
-        cout << corners[i].x << "   " << corners[i].y << endl;
+        corners[i].x = corners[i].x + ceil(width / (4 - iter_adaptiv));
+        corners[i].y = corners[i].y + ceil(height / (4 - iter_adaptiv));
+
     }
 
     return corners;
@@ -575,11 +587,11 @@ int main() {
     cv::solvePnPRansac(corners_3D, corners_2D, parameter_cameraIn, distCoeffs, rvecs, tvecs, false, 100, 1.0, 0.99, inliers);
     cv::Rodrigues(rvecs, rMat);
 
-    
 
-//    std::cerr << "====================Result====================" << std::endl;
-//    std::cout << "R_mat: " << rMat << std::endl;
-//    std::cout << "t: " << tvecs << std::endl;
+
+    std::cerr << "====================Result====================" << std::endl;
+    std::cout << "R_mat: " << rMat << std::endl;
+    std::cout << "t: " << tvecs << std::endl;
 
     return 0;
 
